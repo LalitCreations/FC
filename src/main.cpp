@@ -220,6 +220,18 @@ void get_imu() {
 
 }
 
+void get_gps() {
+  if (gps_serial.available()){
+    gps.encode(gps_serial.read());
+    if (gps.location.isValid()) {
+      lat = gps.location.lat();
+      lon = gps.location.lng();
+      gps_alt = gps.altitude.meters();
+    }
+  }
+
+}
+
 void data_store() { 
   get_alt();
   get_imu();
@@ -277,17 +289,6 @@ float delta_alt() {
   return (deltaAlt);
 }
 
-void get_gps() {
-  if (gps_serial.available()){
-    gps.encode(gps_serial.read());
-    if (gps.location.isValid()) {
-      lat = gps.location.lat();
-      lon = gps.location.lng();
-      gps_alt = gps.altitude.meters();
-    }
-  }
-
-}
 
 void send_rf_packet(){
   LoRa.beginPacket();
