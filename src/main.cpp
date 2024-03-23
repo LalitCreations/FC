@@ -8,14 +8,17 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <LoRa.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
 
 
-//====== BMP180 ======
+//====== Baro ======
 Adafruit_BMP085 baro;
 SimpleKalmanFilter pressureEstimate(1, 1, 1.1); //EXPERIMENTAL!!!
 double base_temp, bmp_temp;
 float gnd_alt , base_press , est_alt, alt, press;
 const float sea_level_press = 0.00;
+float p_alt,c_alt,d_alt;
 
 
 //====== SD card ======
@@ -33,6 +36,8 @@ const int imu_pin = 8;
 const int lora_cs = 9;
 const int lora_dio0 = 10; //pin should have digital interrupt
 const int lora_reset = 11;
+const int gps_rx = 2;
+const int gps_tx = 3;
 
 
 //====== IMU ======
@@ -49,6 +54,14 @@ unsigned long elapsed_time = 0;
 int launch = 0;
 int land = 0;
 int pyro = 0;
+
+
+// ====== GPS ======
+const int gps_baud = 9600;
+TinyGPSPlus gps;
+SoftwareSerial gps_serial(gps_rx, gps_tx);
+float lat,lon,gps_alt;
+
 
 void led_buzz(int led_state){
   digitalWrite(led[0], LOW);
@@ -69,6 +82,22 @@ void led_buzz(int led_state){
     digitalWrite(led[0], LOW);
     digitalWrite(led[1], HIGH);
     digitalWrite(led[2], LOW);
+  } else if (led_state==3){
+    digitalWrite(led[0], LOW);
+    digitalWrite(led[1], HIGH);
+    digitalWrite(led[2], HIGH);
+  } else if (led_state==4){
+    digitalWrite(led[0],HIGH);
+    digitalWrite(led[1],HIGH);
+    digitalWrite(led[2],HIGH);
+  } else if (led_state==5){
+    digitalWrite(led[0],HIGH);
+    digitalWrite(led[1],HIGH);
+    digitalWrite(led[2],HIGH);      
+    digitalWrite(buzzer, HIGH);
+    delay(100);
+    digitalWrite(buzzer, LOW);
+    delay(100);
   }
 }
 
@@ -111,7 +140,13 @@ void setup_sd() {
     data_file.print(" ,");
     data_file.print("Land");
     data_file.print(" ,");
-    data_file.println("Pyro");
+    data_file.print("Pyro");
+    data_file.print(" ,");
+    data_file.print("Lat");
+    data_file.print(" ,");
+    data_file.print("Lon");
+    data_file.print(" ,");
+    data_file.println("GPS_Alt");
     
     data_file.close();
   } else {
@@ -124,7 +159,7 @@ void setup_sd() {
 void setup_baro() {
   Serial.print("Initializing Baro...");
   if (baro.begin()) {
-    Serial.println("BMP Initialized");
+    Serial.println("BMP Initialization done!");
     for (int i = 0; i < 20; i++) { //averages ground pressure,altitude,temperature
         base_temp += baro.readTemperature() * 0.05;
         gnd_alt += baro.readAltitude(sea_level_press) * 0.05;
@@ -145,6 +180,7 @@ void setup_imu () {
     imu.setGyroRange(ICM20649_GYRO_RANGE_500_DPS); //500,1000,2000,4000 dps=> degree per second
     imu.setGyroRateDivisor(255);
     imu.setAccelRateDivisor(4095);
+    Serial.println("IMU initialization done!");
   } else {
     Serial.println("IMU initialization Failed!");
     led_buzz(1);
@@ -157,13 +193,14 @@ void setup_lora(){
   if (LoRa.begin(433E6)) { //LoRa.begin(Freq) 433mhz
     Serial.println("LoRa initialization done!");    
   } else {
-    Serial.println("Starting LoRa failed!"); 
+    Serial.println("LoRa initialization failed!"); 
     led_buzz(1);
   }
 }
 
+
 void get_alt(){
-  alt = baro.readAltitude(101325) - gnd_alt;
+  alt = baro.readAltitude(sea_level_press) - gnd_alt;
   press = baro.readPressure();
   bmp_temp = baro.readTemperature();
   est_alt = pressureEstimate.updateEstimate(alt); //EXPERIMENTAL!!!
@@ -186,6 +223,7 @@ void get_imu() {
 void data_store() { 
   get_alt();
   get_imu();
+  get_gps();
   data_file = SD.open(file_name, FILE_WRITE);
   if (data_file) {
     data_file.print(elapsed_time = millis());
@@ -216,7 +254,13 @@ void data_store() {
     data_file.print(" ,");
     data_file.print(land);
     data_file.print(" ,");
-    data_file.println(pyro);   
+    data_file.print(pyro);   
+    data_file.print(" ,");
+    data_file.print(lat); 
+    data_file.print(" ,");
+    data_file.print(lon); 
+    data_file.print(" ,");
+    data_file.println(gps_alt); 
     data_file.close();
   } 
   else {
@@ -225,10 +269,41 @@ void data_store() {
   delay(0); 
 }
 
-float delta_alt() {                      
-  return (1.11);
+
+float delta_alt() {                       
+  c_alt = baro.readAltitude(sea_level_press);
+  float deltaAlt = c_alt - p_alt;
+  p_alt = c_alt;
+  return (deltaAlt);
 }
 
+void get_gps() {
+  if (gps_serial.available()){
+    gps.encode(gps_serial.read());
+    if (gps.location.isValid()) {
+      lat = gps.location.lat();
+      lon = gps.location.lng();
+      gps_alt = gps.altitude.meters();
+    }
+  }
+
+}
+
+void send_rf_packet(){
+  LoRa.beginPacket();
+  LoRa.print(liftoff_detection_time);
+  LoRa.print(" ,");
+  LoRa.print(lat);
+  LoRa.print(" ,");
+  LoRa.print(lon);
+  LoRa.print(" ,");
+  LoRa.print(alt);
+  LoRa.print(" ,");
+  LoRa.print(pyro);
+  LoRa.print(" ,");
+  LoRa.println(state);
+  LoRa.endPacket();
+}
 
 void setup() {
   Serial.begin(9600);
@@ -259,15 +334,35 @@ void loop() {
 
   while (state == 1) { //liftoff
     data_store();
-    if (delta_alt() <= 0 || elapsed_time >= 16000) {
+    send_rf_packet();
+    led_buzz(3);
+    if (delta_alt() <= 0 || liftoff_detection_time >= chute_deployment_threshold) {
       state = 2;
       digitalWrite(pyro_1, HIGH);
+      Serial.println("Chutes Deployed!!");
       pyro = 1;
     }
   }
 
-  while (state == 2) { //landed
+  while (state == 2) { //under chutes
     data_store();
+    send_rf_packet();
+    led_buzz(4);
+    float delta = abs(delta_alt());
+    if(delta <= 0.17){
+      Serial.println("Landed!");
+      land = 1;
+      state = 3;
+    }
+  }
+
+  while (state == 3){
+    led_buzz(5);
+    get_gps();
+    get_imu();
+    get_alt();
+    send_rf_packet();
   }
   
+
 }
