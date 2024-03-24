@@ -42,8 +42,8 @@ const int gps_tx = 3;
 
 //====== IMU ======
 Adafruit_ICM20649 imu;
-float g_x,g_y,g_z,a_x,a_y,a_z;
-
+float g_x,g_y,g_z,a_x,a_y,a_z,a_net,f_velo;
+float i_velo = 0;
 
 //====== Misc =====
 int state;
@@ -136,6 +136,8 @@ void setup_sd() {
     data_file.print(" ,");
     data_file.print("Gz");
     data_file.print(" ,");
+    data_file.print("Velo");
+    data_file.print(" ,");
     data_file.print("Launch");
     data_file.print(" ,");
     data_file.print("Land");
@@ -217,7 +219,13 @@ void get_imu() {
   a_x = accel.acceleration.x;
   a_y = accel.acceleration.y;
   a_z = accel.acceleration.z;
+  a_net = sqrt(pow(a_x,2) + pow(a_y,2) + pow(a_z,2));
+}
 
+void calc_velo(){ //v = at + u
+  get_imu();
+  f_velo = a_net*liftoff_detection_time + i_velo;
+  f_velo = i_velo;
 }
 
 void get_gps() {
@@ -236,6 +244,7 @@ void data_store() {
   get_alt();
   get_imu();
   get_gps();
+  calc_velo();
   data_file = SD.open(file_name, FILE_WRITE);
   if (data_file) {
     data_file.print(elapsed_time = millis());
@@ -261,6 +270,8 @@ void data_store() {
     data_file.print(g_y);
     data_file.print(" ,");
     data_file.print(g_z);
+    data_file.print(" ,");
+    data_file.print(f_velo);
     data_file.print(" ,");
     data_file.print(launch);
     data_file.print(" ,");
@@ -299,6 +310,8 @@ void send_rf_packet(){
   LoRa.print(lon);
   LoRa.print(" ,");
   LoRa.print(alt);
+  LoRa.print(" ,");
+  LoRa.print(f_velo);
   LoRa.print(" ,");
   LoRa.print(pyro);
   LoRa.print(" ,");
