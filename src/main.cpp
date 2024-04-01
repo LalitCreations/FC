@@ -53,8 +53,8 @@ unsigned long liftoff_detection_time = 0;
 unsigned long elapsed_time = 0;
 int launch = 0;
 int land = 0;
-int pyro = 0;
-
+int pyro_1_status = 0;
+int pyro_2_status = 0;
 
 // ====== GPS ======
 const int gps_baud = 9600;
@@ -62,6 +62,10 @@ TinyGPSPlus gps;
 SoftwareSerial gps_serial(gps_rx, gps_tx);
 float lat,lon,gps_alt;
 
+// ====== LoRa =======
+int interval = 250; //interval between lora send packets
+unsigned long last_transmit_time;
+byte incoming;
 
 void led_buzz(int led_state){
   digitalWrite(led[0], LOW);
@@ -142,7 +146,9 @@ void setup_sd() {
     data_file.print(" ,");
     data_file.print("Land");
     data_file.print(" ,");
-    data_file.print("Pyro");
+    data_file.print("Pyro_1");
+    data_file.print(" ,");
+    data_file.print("Pyro_2");
     data_file.print(" ,");
     data_file.print("Lat");
     data_file.print(" ,");
@@ -277,7 +283,9 @@ void data_store() {
     data_file.print(" ,");
     data_file.print(land);
     data_file.print(" ,");
-    data_file.print(pyro);   
+    data_file.print(pyro_1_status);   
+    data_file.print(" ,");
+    data_file.print(pyro_2_status);   
     data_file.print(" ,");
     data_file.print(lat); 
     data_file.print(" ,");
@@ -300,6 +308,22 @@ float delta_alt() {
   return (deltaAlt);
 }
 
+void LoRa_duplex(){
+  if (millis() - last_transmit_time > interval) {
+    send_rf_packet();
+    last_transmit_time = millis();   
+    interval = random(250) + 1000;  
+  } else if (LoRa.available()){
+    incoming = LoRa.read();
+    if (String(incoming) == "true"){
+      digitalWrite(pyro_2,HIGH);
+      delay(500);
+      digitalWrite(pyro_2,LOW);
+      pyro_2_status=1;
+    }
+  }
+
+}
 
 void send_rf_packet(){
   LoRa.beginPacket();
@@ -313,11 +337,15 @@ void send_rf_packet(){
   LoRa.print(" ,");
   LoRa.print(f_velo);
   LoRa.print(" ,");
-  LoRa.print(pyro);
+  LoRa.print(pyro_1_status);
+  LoRa.print(" ,");
+  LoRa.print(pyro_2_status);
   LoRa.print(" ,");
   LoRa.println(state);
   LoRa.endPacket();
 }
+
+
 
 void setup() {
   Serial.begin(9600);
@@ -338,6 +366,7 @@ void loop() {
     get_imu();
     data_store();
     led_buzz(2);
+
     if (a_y > liftoff_threshold){
       liftoff_detection_time = millis();
       Serial.println("Liftoff confirmed!");
@@ -354,7 +383,7 @@ void loop() {
       state = 2;
       digitalWrite(pyro_1, HIGH);
       Serial.println("Chutes Deployed!!");
-      pyro = 1;
+      pyro_1_status = 1;
     }
   }
 
