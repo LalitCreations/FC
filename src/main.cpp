@@ -11,6 +11,36 @@
 #include <TinyGPS++.h>
 #include <SoftwareSerial.h>
 
+/*
+
+====== STATE DEFINITIONS ======
+
+- State -1: Error
+    Error in intialization of modules
+    Enters infinite loop
+
+- State 0: Standby
+    Initializing components and launch detection
+    program enters infinite loop if error in intialization
+
+- State 1: Ascent
+    Liftoff detected
+    Apogee detection
+
+- State 2: Descent
+    Pyro charges ignited, chutes ejected
+    land detection
+
+- State 3: landed
+    simular to standby 
+    no launch detection
+
+====== PROGRAM INFO ======
+
+  RAM:   [=         ]  10.5% (used 6904 bytes from 65536 bytes)
+  Flash: [==        ]  21.4% (used 56208 bytes from 262144 bytes)
+
+*/
 
 //====== Baro ======
 Adafruit_BMP085 baro;
@@ -48,12 +78,13 @@ float i_velo = 0;
 //====== Misc =====
 int state;
 int liftoff_threshold;
-int chute_deployment_threshold;
+unsigned int chute_deployment_threshold;
 unsigned long liftoff_detection_time = 0;
 unsigned long elapsed_time = 0;
 int launch = 0;
 int land = 0;
 int pyro = 0;
+int data_log_freq = 10;
 
 
 // ====== GPS ======
@@ -67,8 +98,7 @@ void led_buzz(int led_state){
   digitalWrite(led[0], LOW);
   digitalWrite(led[1], LOW);
   digitalWrite(led[2], LOW);
-  //state 1 ERROR
-  if (led_state == 1){
+  if (led_state == -1){  //state -1:  ERROR
     while (true) {
       digitalWrite(led[0], HIGH);
       digitalWrite(led[1], LOW);
@@ -78,19 +108,20 @@ void led_buzz(int led_state){
       digitalWrite(buzzer, LOW);
       delay(500);
     }
-  } else if(led_state == 2){ //standby
+  } else if(led_state == 0){  //State 0: Standby
     digitalWrite(led[0], LOW);
     digitalWrite(led[1], HIGH);
     digitalWrite(led[2], LOW);
-  } else if (led_state==3){
+  
+  } else if (led_state==1){  //State 1: Ascent
     digitalWrite(led[0], LOW);
     digitalWrite(led[1], HIGH);
     digitalWrite(led[2], HIGH);
-  } else if (led_state==4){
+  } else if (led_state==2){ //State 2: Descent
     digitalWrite(led[0],HIGH);
     digitalWrite(led[1],HIGH);
     digitalWrite(led[2],HIGH);
-  } else if (led_state==5){
+  } else if (led_state==3){ //State 3: Landed
     digitalWrite(led[0],HIGH);
     digitalWrite(led[1],HIGH);
     digitalWrite(led[2],HIGH);      
@@ -108,7 +139,7 @@ void setup_sd() {
     Serial.println("SD initialization failed!");
   } else {
     Serial.println("SD initialization done.");   
-    led_buzz(1);
+    led_buzz(-1);
   }
 
   data_file = SD.open(file_name, FILE_WRITE);
@@ -153,7 +184,7 @@ void setup_sd() {
     data_file.close();
   } else {
     Serial.println("error opening data_file.csv");
-    led_buzz(1);
+    led_buzz(-1);
   }
 
 }
@@ -169,7 +200,7 @@ void setup_baro() {
     }
   }else {
     Serial.println("Baro initialization failed!");
-    led_buzz(1);
+    led_buzz(-1);
   }
 }
 
@@ -185,7 +216,7 @@ void setup_imu () {
     Serial.println("IMU initialization done!");
   } else {
     Serial.println("IMU initialization Failed!");
-    led_buzz(1);
+    led_buzz(-1);
   }
 }
 
@@ -196,7 +227,7 @@ void setup_lora(){
     Serial.println("LoRa initialization done!");    
   } else {
     Serial.println("LoRa initialization failed!"); 
-    led_buzz(1);
+    led_buzz(-1);
   }
 }
 
@@ -289,7 +320,7 @@ void data_store() {
   else {
     Serial.println("Error writing to data_file.csv");
   }
-  delay(0); 
+  delay(1000/data_log_freq); 
 }
 
 
@@ -334,10 +365,10 @@ void setup() {
 
 void loop() {
 
-  while (state == 0){ //idle
+  while (state == 0){ //State 0: Standby
     get_imu();
     data_store();
-    led_buzz(2);
+    led_buzz(0);
     if (a_y > liftoff_threshold){
       liftoff_detection_time = millis();
       Serial.println("Liftoff confirmed!");
@@ -346,10 +377,10 @@ void loop() {
     }
   }
 
-  while (state == 1) { //liftoff
+  while (state == 1) { //State 1: Ascent
     data_store();
     send_rf_packet();
-    led_buzz(3);
+    led_buzz(1);
     if (delta_alt() <= 0 || liftoff_detection_time >= chute_deployment_threshold) {
       state = 2;
       digitalWrite(pyro_1, HIGH);
@@ -358,10 +389,9 @@ void loop() {
     }
   }
 
-  while (state == 2) { //under chutes
-    data_store();
+  while (state == 2) { //State 2: Descent
     send_rf_packet();
-    led_buzz(4);
+    led_buzz(2);
     float delta = abs(delta_alt());
     if(delta <= 0.17){
       Serial.println("Landed!");
@@ -370,8 +400,8 @@ void loop() {
     }
   }
 
-  while (state == 3){
-    led_buzz(5);
+  while (state == 3){ //State 3: Landed
+    led_buzz(3);
     get_gps();
     get_imu();
     get_alt();
