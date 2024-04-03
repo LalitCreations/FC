@@ -42,19 +42,6 @@
 
 */
 
-//====== Baro ======
-Adafruit_BMP085 baro;
-SimpleKalmanFilter pressureEstimate(1, 1, 1.1); //EXPERIMENTAL!!!
-double base_temp, bmp_temp;
-float gnd_alt , base_press , est_alt, alt, press;
-const float sea_level_press = 0.00;
-float p_alt,c_alt,d_alt;
-
-
-//====== SD card ======
-String file_name = "data_file.csv";
-File data_file;
-
 
 //====== Pin ======
 const int SD_pin = 1;
@@ -68,6 +55,20 @@ const int lora_dio0 = 10; //pin should have digital interrupt
 const int lora_reset = 11;
 const int gps_rx = 2;
 const int gps_tx = 3;
+
+
+//====== Baro ======
+Adafruit_BMP085 baro;
+SimpleKalmanFilter pressureEstimate(1, 1, 1.1); //EXPERIMENTAL!!!
+double base_temp, bmp_temp;
+float gnd_alt , base_press , est_alt, alt, press;
+const float sea_level_press = 0.00;
+float p_alt,c_alt,d_alt;
+
+
+//====== SD card ======
+String file_name = "data_file.csv";
+File data_file;
 
 
 //====== IMU ======
@@ -137,9 +138,9 @@ void setup_sd() {
 
   if (!SD.begin(SD_pin)) {
     Serial.println("SD initialization failed!");
+    led_buzz(-1);
   } else {
     Serial.println("SD initialization done.");   
-    led_buzz(-1);
   }
 
   data_file = SD.open(file_name, FILE_WRITE);
@@ -266,6 +267,7 @@ void get_gps() {
       lat = gps.location.lat();
       lon = gps.location.lng();
       gps_alt = gps.altitude.meters();
+      est_alt = pressureEstimate.updateEstimate(gps_alt); //EXPERIMENTAL !!!
     }
   }
 
@@ -316,9 +318,8 @@ void data_store() {
     data_file.print(" ,");
     data_file.println(gps_alt); 
     data_file.close();
-  } 
-  else {
-    Serial.println("Error writing to data_file.csv");
+  } else {
+    Serial.println("Writing to csv failed!");
   }
   delay(1000/data_log_freq); 
 }
