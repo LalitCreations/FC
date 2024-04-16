@@ -371,7 +371,7 @@ void loop() {
     data_store();
     led_buzz(0);
     if (a_y > liftoff_threshold){
-      liftoff_detection_time = millis();
+      liftoff_detection_time = millis() - elapsed_time;
       Serial.println("Liftoff confirmed!");
       launch =1;
       state = 1;
